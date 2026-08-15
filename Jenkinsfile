@@ -1,14 +1,19 @@
 pipeline {
     agent any
 
+    options {
+        disableConcurrentBuilds(abortPrevious: true)
+        timeout(time: 30, unit: 'MINUTES')
+        timestamps()
+    }
+
     environment {
         IMAGE_NAME = 'rushikesh1193/hostel-management'
-        IMAGE_TAG = "${BUILD_NUMBER}"
-        DOCKERHUB = credentials('dockerhub-credentials')
+        IMAGE_TAG  = "${BUILD_NUMBER}"
     }
 
     stages {
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
                 git branch: 'main',
                     url: 'https://github.com/rushikesh1193pawar-hash/ProjecHostel-Management.git'
@@ -18,6 +23,7 @@ pipeline {
         stage('Maven Build') {
             steps {
                 sh 'mvn clean package -DskipTests'
+                sh 'ls -lh target/HostelManagementSystem.war'
             }
         }
 
@@ -25,44 +31,47 @@ pipeline {
             steps {
                 sh '''
                     docker build \
-                    -t $IMAGE_NAME:$IMAGE_TAG \
-                    -t $IMAGE_NAME:latest .
+                      -t ${IMAGE_NAME}:${IMAGE_TAG} \
+                      -t ${IMAGE_NAME}:latest .
                 '''
             }
         }
 
-        stage('Docker Login') {
+        stage('Docker Hub Login and Push') {
             steps {
-                sh '''
-                    echo "$DOCKERHUB_PSW" |
-                    docker login \
-                    -u "$DOCKERHUB_USR" \
-                    --password-stdin
-                '''
-            }
-        }
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-credentials',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_TOKEN'
+                    )
+                ]) {
+                    sh '''
+                        echo "$DOCKER_TOKEN" |
+                        docker login \
+                          --username "$DOCKER_USER" \
+                          --password-stdin
 
-        stage('Docker Push') {
-            steps {
-                sh '''
-                    docker push $IMAGE_NAME:$IMAGE_TAG
-                    docker push $IMAGE_NAME:latest
-                '''
+                        docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                        docker push ${IMAGE_NAME}:latest
+                    '''
+                }
             }
         }
     }
 
     post {
-        always {
-            sh 'docker logout || true'
-        }
-
         success {
-            echo 'CI pipeline completed successfully.'
+            echo 'SUCCESS: Image Docker Hub पर push हो गई।'
         }
 
         failure {
-            echo 'Pipeline failed. Check Console Output.'
+            echo 'FAILED: Console Output में error check करें।'
+        }
+
+        always {
+            sh 'docker logout || true'
+            cleanWs()
         }
     }
 }
